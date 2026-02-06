@@ -901,6 +901,22 @@ func (c *Cache) AddVirtual(remote string, size int64, isDir bool) error {
 }
 
 // Transfers returns information about active transfers and cache state
+// CacheStatusBatch returns cache status for the given file paths.
+// Only returns items already loaded in memory - does not trigger disk I/O.
+// Paths not found in the in-memory cache map are omitted from results.
+func (c *Cache) CacheStatusBatch(paths []string) rc.Params {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	items := make(map[string]rc.Params)
+	for _, path := range paths {
+		path = clean(path)
+		if item, ok := c.item[path]; ok {
+			items[path] = item.CacheStatusInfo()
+		}
+	}
+	return rc.Params{"items": items}
+}
+
 func (c *Cache) Transfers() rc.Params {
 	c.mu.Lock()
 	defer c.mu.Unlock()

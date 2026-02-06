@@ -1520,6 +1520,32 @@ func (item *Item) rename(name string, newName string, newObj fs.Object) (err err
 	return err
 }
 
+// CacheStatusInfo returns lightweight cache status info for this Item.
+// Used by vfs/cache/status endpoint - no download/read stats, just cache state.
+func (item *Item) CacheStatusInfo() rc.Params {
+	item.mu.Lock()
+	defer item.mu.Unlock()
+	cacheBytes := item.info.Rs.Size()
+	out := rc.Params{
+		"size":       item.info.Size,
+		"cacheBytes": cacheBytes,
+	}
+	if item.info.Size > 0 {
+		out["cachePercentage"] = int(float64(cacheBytes) * 100 / float64(item.info.Size))
+		if cacheBytes >= item.info.Size {
+			out["cacheStatus"] = "full"
+		} else if cacheBytes > 0 {
+			out["cacheStatus"] = "partial"
+		} else {
+			out["cacheStatus"] = "none"
+		}
+	} else {
+		out["cachePercentage"] = 0
+		out["cacheStatus"] = "unknown"
+	}
+	return out
+}
+
 // TransferStats returns transfer/cache statistics for this Item
 func (item *Item) TransferStats() rc.Params {
 	item.mu.Lock()

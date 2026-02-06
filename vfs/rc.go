@@ -628,3 +628,78 @@ func rcTransfers(ctx context.Context, in rc.Params) (out rc.Params, err error) {
 	}
 	return vfs.cache.Transfers(), nil
 }
+
+func init() {
+	rc.Add(rc.Call{
+		Path:  "vfs/cache/status",
+		Title: "Get cache status for specific files.",
+		Help: `
+This returns cache status information for the specified file paths.
+
+Unlike core/command cat (which spawns a subprocess and reads metadata
+from disk), this endpoint reads directly from the in-memory VFS cache
+item map, making it extremely fast and non-blocking.
+
+Parameters:
+
+- paths - array of remote file paths to check (required)
+
+Returns:
+
+` + "```" + `
+{
+    "items": {
+        "/path/to/file.mkv": {
+            "size": 1073741824,
+            "cacheBytes": 1073741824,
+            "cachePercentage": 100,
+            "cacheStatus": "full"
+        },
+        "/path/to/other.mkv": {
+            "size": 536870912,
+            "cacheBytes": 268435456,
+            "cachePercentage": 50,
+            "cacheStatus": "partial"
+        }
+    }
+}
+` + "```" + `
+
+The cacheStatus field can be:
+- "none" - file is not cached
+- "partial" - file is partially cached
+- "full" - file is fully cached
+- "unknown" - file size is unknown
+
+Files not found in the in-memory cache map are omitted from results.
+An omitted file means it has no cached data loaded in memory.
+` + getVFSHelp,
+		Fn: rcCacheStatus,
+	})
+}
+
+func rcCacheStatus(ctx context.Context, in rc.Params) (out rc.Params, err error) {
+	vfs, err := getVFS(in)
+	if err != nil {
+		return nil, err
+	}
+	if vfs.cache == nil {
+		return rc.Params{
+			"items": map[string]rc.Params{},
+		}, nil
+	}
+
+	var paths []string
+	err = in.GetStructMissingOK("paths", &paths)
+	if err != nil {
+		return nil, err
+	}
+	if len(paths) == 0 {
+		return rc.Params{
+			"items": map[string]rc.Params{},
+		}, nil
+	}
+
+	return vfs.cache.CacheStatusBatch(paths), nil
+}
+
