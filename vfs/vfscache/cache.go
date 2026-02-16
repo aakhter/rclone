@@ -917,6 +917,55 @@ func (c *Cache) CacheStatusBatch(paths []string) rc.Params {
 	return rc.Params{"items": items}
 }
 
+// CacheStatusAll returns cache status for ALL items in the cache with pagination.
+// Uses two-phase locking to minimize lock hold time:
+// Phase 1: snapshot path keys under lock (fast O(n) copy)
+// Phase 2: sort without lock, then read page items under lock (bounded by limit)
+func (c *Cache) CacheStatusAll(offset, limit int) rc.Params {
+	// Phase 1: Snapshot path keys under lock
+	c.mu.Lock()
+	paths := make([]string, 0, len(c.item))
+	for path := range c.item {
+		paths = append(paths, path)
+	}
+	c.mu.Unlock()
+
+	// Sort without lock held
+	sort.Strings(paths)
+	total := len(paths)
+
+	// Bounds check
+	if offset >= total {
+		return rc.Params{
+			"items":  map[string]rc.Params{},
+			"total":  total,
+			"offset": offset,
+			"limit":  limit,
+		}
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+
+	// Phase 2: Read page items under lock (bounded by limit)
+	c.mu.Lock()
+	items := make(map[string]rc.Params)
+	for _, path := range paths[offset:end] {
+		if item, ok := c.item[path]; ok {
+			items[path] = item.CacheStatusInfo()
+		}
+	}
+	c.mu.Unlock()
+
+	return rc.Params{
+		"items":  items,
+		"total":  total,
+		"offset": offset,
+		"limit":  limit,
+	}
+}
+
 func (c *Cache) Transfers() rc.Params {
 	c.mu.Lock()
 	defer c.mu.Unlock()

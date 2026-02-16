@@ -596,7 +596,6 @@ Returns:
     }
 }
 ` + "\x60\x60\x60" + `
-
 The cacheStatus field can be:
 - "none" - file is not cached
 - "partial" - file is partially cached
@@ -632,7 +631,7 @@ func rcTransfers(ctx context.Context, in rc.Params) (out rc.Params, err error) {
 func init() {
 	rc.Add(rc.Call{
 		Path:  "vfs/cache/status",
-		Title: "Get cache status for specific files.",
+		Title: "Get cache status for specific files or all cached items.",
 		Help: `
 This returns cache status information for the specified file paths.
 
@@ -642,9 +641,15 @@ item map, making it extremely fast and non-blocking.
 
 Parameters:
 
-- paths - array of remote file paths to check (required)
+- paths - array of remote file paths to check
+- all - if true, return all cached items (ignores paths)
+- offset - pagination offset for all mode (default: 0)
+- limit - pagination page size for all mode (default: 500)
 
-Returns:
+Use "paths" mode for checking specific files, or "all" mode for
+enumerating the entire cache (e.g., for visualization/monitoring).
+
+Returns (paths mode):
 
 ` + "```" + `
 {
@@ -662,6 +667,17 @@ Returns:
             "cacheStatus": "partial"
         }
     }
+}
+` + "```" + `
+
+In "all" mode, the response also includes pagination fields:
+
+` + "```" + `
+{
+    "items": { ... },
+    "total": 1500,
+    "offset": 0,
+    "limit": 500
 }
 ` + "```" + `
 
@@ -689,6 +705,18 @@ func rcCacheStatus(ctx context.Context, in rc.Params) (out rc.Params, err error)
 		}, nil
 	}
 
+	// All mode: return paginated list of all cached items
+	all, _ := in.GetBool("all")
+	if all {
+		offset, _ := in.GetInt64("offset")
+		limit, _ := in.GetInt64("limit")
+		if limit <= 0 {
+			limit = 500
+		}
+		return vfs.cache.CacheStatusAll(int(offset), int(limit)), nil
+	}
+
+	// Paths mode: check specific files
 	var paths []string
 	err = in.GetStructMissingOK("paths", &paths)
 	if err != nil {
