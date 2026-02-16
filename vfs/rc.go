@@ -731,3 +731,54 @@ func rcCacheStatus(ctx context.Context, in rc.Params) (out rc.Params, err error)
 	return vfs.cache.CacheStatusBatch(paths), nil
 }
 
+
+func init() {
+	rc.Add(rc.Call{
+		Path:  "vfs/cache/forget",
+		Title: "Remove files from the VFS disk cache.",
+		Help: `
+This removes files from the VFS on-disk cache, freeing disk space.
+Unlike vfs/forget (which only clears the directory listing cache),
+this actually deletes the cached file data and metadata from disk.
+
+Parameters:
+
+- paths - array of file paths to remove from cache
+
+Returns a JSON object with removed paths and any errors.
+` + getVFSHelp,
+		Fn: rcCacheForget,
+	})
+}
+
+func rcCacheForget(ctx context.Context, in rc.Params) (out rc.Params, err error) {
+	vfs, err := getVFS(in)
+	if err != nil {
+		return nil, err
+	}
+	if vfs.cache == nil {
+		return nil, errors.New("VFS cache is not enabled")
+	}
+
+	var paths []string
+	err = in.GetStructMissingOK("paths", &paths)
+	if err != nil {
+		return nil, err
+	}
+	if len(paths) == 0 {
+		return nil, errors.New("no paths specified")
+	}
+
+	removed := []string{}
+	notFound := []string{}
+
+	for _, path := range paths {
+		vfs.cache.Remove(path)
+		removed = append(removed, path)
+	}
+
+	return rc.Params{
+		"removed":  removed,
+		"notFound": notFound,
+	}, nil
+}
