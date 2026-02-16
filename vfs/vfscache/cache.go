@@ -696,6 +696,9 @@ func (c *Cache) purgeOld(maxAge time.Duration) {
 	defer c.mu.Unlock()
 	// cutoff := time.Now().Add(-maxAge)
 	for _, item := range c.item {
+		if item.GetPriority() >= 100 {
+			continue // pinned items skip age-based eviction
+		}
 		c.removeNotInUse(item, maxAge, false)
 	}
 	if c.quotasOK() {
@@ -793,6 +796,9 @@ func (c *Cache) purgeOverQuota() {
 
 	// Remove items until the quota is OK
 	for _, item := range items {
+		if item.GetPriority() >= 100 {
+			continue // pinned items skip quota-based eviction
+		}
 		c.removeNotInUse(item, 0, c.quotasOK())
 	}
 	if c.quotasOK() {
@@ -932,6 +938,28 @@ func (c *Cache) CacheStatusBatch(paths []string) rc.Params {
 		}
 	}
 	return rc.Params{"items": items}
+}
+
+// SetPriorityBatch sets eviction priority for multiple cache items.
+// Returns lists of updated and not-found paths.
+func (c *Cache) SetPriorityBatch(priorities map[string]int) (updated []string, notFound []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for path, priority := range priorities {
+		cleanPath := strings.TrimPrefix(path, "/")
+		item, ok := c.item[cleanPath]
+		if !ok {
+			notFound = append(notFound, path)
+			continue
+		}
+		if err := item.SetPriority(priority); err != nil {
+			fs.Errorf(cleanPath, "vfs cache: failed to set priority: %v", err)
+			notFound = append(notFound, path)
+			continue
+		}
+		updated = append(updated, path)
+	}
+	return
 }
 
 // CacheStatusAll returns cache status for ALL items in the cache with pagination.

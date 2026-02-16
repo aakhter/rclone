@@ -785,3 +785,72 @@ func rcCacheForget(ctx context.Context, in rc.Params) (out rc.Params, err error)
 		"notFound": notFound,
 	}, nil
 }
+
+func init() {
+	rc.Add(rc.Call{
+		Path:  "vfs/cache/priority",
+		Title: "Set cache eviction priority for files.",
+		Help: `
+Set cache eviction priority for files. Higher priority = kept longer
+during cache eviction. Priority 0 is the default (normal eviction).
+Priority >= 100 means pinned (skipped by age and quota eviction).
+
+Parameters:
+
+- priorities - object mapping file paths to integer priority values
+
+Example:
+
+` + "```" + `
+{
+    "priorities": {
+        "/.ids/path/to/file.mkv": 80,
+        "/.ids/path/to/other.mkv": 100
+    }
+}
+` + "```" + `
+
+Returns:
+
+` + "```" + `
+{
+    "updated": ["/.ids/path/to/file.mkv"],
+    "notFound": ["/.ids/path/to/other.mkv"]
+}
+` + "```" + `
+
+Priority tiers:
+- 0: Normal (default). Evicted first by age then quota (LRU).
+- 1-90: Prefetch. Evicted after all priority-0 items exhausted.
+- 100+: Pinned. Skipped by purgeOld and purgeOverQuota. Only
+  purgeClean (ENOSPC last-resort) can evict pinned items.
+` + getVFSHelp,
+		Fn: rcCachePriority,
+	})
+}
+
+func rcCachePriority(ctx context.Context, in rc.Params) (out rc.Params, err error) {
+	vfs, err := getVFS(in)
+	if err != nil {
+		return nil, err
+	}
+	if vfs.cache == nil {
+		return nil, errors.New("VFS cache is not enabled")
+	}
+
+	var priorities map[string]int
+	err = in.GetStructMissingOK("priorities", &priorities)
+	if err != nil {
+		return nil, err
+	}
+	if len(priorities) == 0 {
+		return nil, errors.New("no priorities specified")
+	}
+
+	updated, notFound := vfs.cache.SetPriorityBatch(priorities)
+
+	return rc.Params{
+		"updated":  updated,
+		"notFound": notFound,
+	}, nil
+}

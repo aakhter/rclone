@@ -131,6 +131,7 @@ type Info struct {
 	Rs          ranges.Ranges // which parts of the file are present
 	Fingerprint string        // fingerprint of remote object
 	Dirty       bool          // set if the backing file has been modified
+	Priority    int           // eviction priority: 0=normal, higher=keep longer, >=100=pinned
 }
 
 // Items are a slice of *Item ordered by ATime
@@ -167,6 +168,9 @@ func (v Items) Less(i, j int) bool {
 	jItem.mu.Lock()
 	defer jItem.mu.Unlock()
 
+	if iItem.info.Priority != jItem.info.Priority {
+		return iItem.info.Priority < jItem.info.Priority
+	}
 	return iItem.info.ATime.Before(jItem.info.ATime)
 }
 
@@ -451,6 +455,21 @@ func (item *Item) GetName() (name string) {
 	item.mu.Lock()
 	defer item.mu.Unlock()
 	return item.name
+}
+
+// GetPriority returns the eviction priority of the item
+func (item *Item) GetPriority() int {
+	item.mu.Lock()
+	defer item.mu.Unlock()
+	return item.info.Priority
+}
+
+// SetPriority sets the eviction priority and persists it to metadata
+func (item *Item) SetPriority(priority int) error {
+	item.mu.Lock()
+	defer item.mu.Unlock()
+	item.info.Priority = priority
+	return item._save()
 }
 
 // GetSize gets the current size of the item
@@ -1529,6 +1548,7 @@ func (item *Item) CacheStatusInfo() rc.Params {
 	out := rc.Params{
 		"size":       item.info.Size,
 		"cacheBytes": cacheBytes,
+		"priority":   item.info.Priority,
 	}
 	if item.info.Size > 0 {
 		out["cachePercentage"] = int(float64(cacheBytes) * 100 / float64(item.info.Size))
@@ -1557,6 +1577,7 @@ func (item *Item) TransferStats() rc.Params {
 		"opens":      item.opens,
 		"lastAccess": item.info.ATime,
 		"dirty":      item.info.Dirty,
+		"priority":   item.info.Priority,
 	}
 
 	// Cache bytes from ranges
