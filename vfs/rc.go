@@ -773,8 +773,11 @@ func rcCacheForget(ctx context.Context, in rc.Params) (out rc.Params, err error)
 	notFound := []string{}
 
 	for _, path := range paths {
-		vfs.cache.Remove(path)
-		removed = append(removed, path)
+		if vfs.cache.Remove(path) {
+			removed = append(removed, path)
+		} else {
+			notFound = append(notFound, path)
+		}
 	}
 
 	return rc.Params{
