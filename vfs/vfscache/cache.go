@@ -495,6 +495,23 @@ func (c *Cache) Remove(name string) (wasWriting bool) {
 	return item.remove("file deleted")
 }
 
+// Forget removes the named file from the cache and returns whether it was found.
+// Unlike Remove, the return value indicates presence, not write status.
+func (c *Cache) Forget(name string) (found bool) {
+	name = clean(name)
+	c.mu.Lock()
+	item := c.item[name]
+	if item != nil {
+		delete(c.item, name)
+	}
+	c.mu.Unlock()
+	if item == nil {
+		return false
+	}
+	item.remove("file forgotten")
+	return true
+}
+
 // SetModTime should be called to set the modification time of the cache file
 func (c *Cache) SetModTime(name string, modTime time.Time) {
 	item, _ := c.get(name)
